@@ -1,0 +1,45 @@
+{
+    "name": "stefanfisk/phpreact",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Stefan Fisk",
+            "email": "contact@stefanfisk.com"
+        }
+    ],
+    "scripts": {
+        "test": "./vendor/bin/phpunit",
+        "test-7.4": " docker run --rm -v $(pwd):/app -w /app php:7.4-cli vendor/bin/phpunit tests",
+        "test-8.0": " docker run --rm -v $(pwd):/app -w /app php:8.0-cli vendor/bin/phpunit tests",
+        "check-style": "./vendor/bin/phpcs",
+        "fix-style": "./vendor/bin/phpcbf"
+    },
+    "autoload": {
+        "psr-4": {
+            "StefanFisk\\Phpreact\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "StefanFisk\\Phpreact\\": "tests/"
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "require": {
+        "php": "^7.4 || ^8"
+    },
+    "require-dev": {
+        "doctrine/coding-standard": "^10.0",
+        "phpunit/phpunit": "^9.5",
+        "psalm/plugin-phpunit": "^0.18.3",
+        "vimeo/psalm": "^4.29"
+    }
+}
