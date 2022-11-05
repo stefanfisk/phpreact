@@ -18,7 +18,10 @@
     "autoload": {
         "psr-4": {
             "StefanFisk\\Phpreact\\": "src/"
-        }
+        },
+        "files": [
+            "src/functions.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
