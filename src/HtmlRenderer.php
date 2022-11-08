@@ -4,16 +4,24 @@ declare(strict_types=1);
 
 namespace StefanFisk\Phpreact;
 
+use Closure;
 use InvalidArgumentException;
 use Throwable;
 
 use function array_map;
+use function call_user_func;
+use function class_exists;
+use function count;
+use function function_exists;
 use function gettype;
 use function htmlspecialchars;
 use function is_array;
 use function is_bool;
+use function is_callable;
+use function is_object;
 use function is_scalar;
 use function is_string;
+use function method_exists;
 use function ob_end_clean;
 use function ob_get_clean;
 use function ob_get_level;
@@ -95,6 +103,71 @@ class HtmlRenderer
 
         $type  = $el->getType();
         $props = $el->getProps();
+
+        // Closure component
+
+        if ($type instanceof Closure) {
+            $this->renderComponent($type, $props);
+
+            return;
+        }
+
+        // Function component
+
+        if (is_string($type) && function_exists($type)) {
+            $this->renderComponent($type, $props);
+
+            return;
+        }
+
+        // Object component with default method
+
+        if (is_object($type) && method_exists($type, 'render')) {
+            $this->renderComponent([$type, 'render'], $props);
+
+            return;
+        }
+
+        // Object component with custom method
+
+        if (
+            is_array($type)
+            && count($type) === 2
+            && is_object($type[0])
+            && is_string($type[1])
+            && method_exists($type[0], $type[1])
+        ) {
+            $this->renderComponent($type, $props);
+
+            return;
+        }
+
+        // Class component with default method
+
+        if (is_string($type) && class_exists($type) && method_exists($type, 'render')) {
+            $component = new $type();
+
+            $this->renderComponent([$component, 'render'], $props);
+
+            return;
+        }
+
+        // Class component with custom method
+
+        if (
+            is_array($type)
+            && count($type) === 2
+            && is_string($type[0])
+            && is_string($type[1])
+            && class_exists($type[0])
+            && method_exists($type[0], $type[1])
+        ) {
+            $component = new $type[0]();
+
+            $this->renderComponent([$component, $type[1]], $props);
+
+            return;
+        }
 
         // HTML tag
 
@@ -179,6 +252,12 @@ class HtmlRenderer
         }
 
         echo '</' . $type . '>';
+    }
+
+    /** @param array<string,mixed> $props */
+    private function renderComponent(callable $type, array $props): void
+    {
+        $this->render(call_user_func($type, $props));
     }
 
     private function isUnsafeName(string $name): bool

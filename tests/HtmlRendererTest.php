@@ -6,6 +6,7 @@ namespace StefanFisk\Phpreact;
 
 use DOMDocument;
 use PHPUnit\Framework\TestCase;
+use StefanFisk\Phpreact\Support\FooComponent;
 use Throwable;
 
 use const LIBXML_HTML_NODEFDTD;
@@ -199,6 +200,118 @@ class HtmlRendererTest extends TestCase
         $this->assertRenderThrows(
             RenderError::class,
             el('img', [], 'foo'),
+        );
+    }
+
+    public function testRootComponent(): void
+    {
+        $c = static fn (array $props): Element => el(
+            'div',
+            ['data-foo' => $props['foo']],
+            el('div', ['class' => 'children'], $props['children']),
+        );
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el($c, ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testChildComponent(): void
+    {
+        $c = static fn (array $props): Element => el(
+            'div',
+            ['data-foo' => $props['foo']],
+            el('div', ['class' => 'children'], $props['children']),
+        );
+
+        $this->assertRenderMatches(
+            '<div><div data-foo="bar"><div class="children">baz</div></div></div>',
+            el('div', [], el($c, ['foo' => 'bar'], 'baz')),
+        );
+    }
+
+    public function testNestedComponents(): void
+    {
+        $c = static fn (array $props): Element => el(
+            'div',
+            ['data-foo' => $props['foo']],
+            el('div', ['class' => 'children'], $props['children']),
+        );
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children"><div data-foo="baz"><div class="children">qux</div></div></div></div>', // phpcs:ignore Generic.Files.LineLength.TooLong
+            el($c, ['foo' => 'bar'], el($c, ['foo' => 'baz'], 'qux')),
+        );
+    }
+
+    public function testClosureComponent(): void
+    {
+        $c = static fn (array $props): Element => el(
+            'div',
+            ['data-foo' => $props['foo']],
+            el('div', ['class' => 'children'], $props['children']),
+        );
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el($c, ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testClassComponent(): void
+    {
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el(FooComponent::class, ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testClassMethodComponent(): void
+    {
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el([FooComponent::class, 'fn'], ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testObjectComponent(): void
+    {
+        $c = new class {
+            /** @param array<string,mixed> $props */
+            public function render(array $props): Element
+            {
+                return el(
+                    'div',
+                    ['data-foo' => $props['foo']],
+                    el('div', ['class' => 'children'], $props['children']),
+                );
+            }
+        };
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el($c, ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testObjectMethodComponent(): void
+    {
+        $c = new class {
+            /** @param array<string,mixed> $props */
+            public function fn(array $props): Element
+            {
+                return el(
+                    'div',
+                    ['data-foo' => $props['foo']],
+                    el('div', ['class' => 'children'], $props['children']),
+                );
+            }
+        };
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"><div class="children">baz</div></div>',
+            el([$c, 'fn'], ['foo' => 'bar'], 'baz'),
         );
     }
 }
