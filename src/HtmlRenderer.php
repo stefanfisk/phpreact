@@ -50,6 +50,9 @@ class HtmlRenderer
         'wbr' => true,
     ];
 
+    /** @var array<string,mixed> */
+    private array $context = [];
+
     /** @param mixed $el */
     public function renderToString($el): string
     {
@@ -103,6 +106,14 @@ class HtmlRenderer
 
         $type  = $el->getType();
         $props = $el->getProps();
+
+        // Context
+
+        if ($type === Context::class) {
+            $this->renderContext($props);
+
+            return;
+        }
 
         // Closure component
 
@@ -195,6 +206,19 @@ class HtmlRenderer
     }
 
     /** @param array<string,mixed> $props */
+    private function renderContext(array $props): void
+    {
+        $children = $props['children'] ?? null ?: [];
+        unset($props['children']);
+
+        foreach ($props as $name => $value) {
+            $this->context[$name] = $value;
+        }
+
+        $this->render($children);
+    }
+
+    /** @param array<string,mixed> $props */
     private function renderTag(string $type, array $props): void
     {
         if ($type === '') {
@@ -257,7 +281,27 @@ class HtmlRenderer
     /** @param array<string,mixed> $props */
     private function renderComponent(callable $type, array $props): void
     {
+        $oldResolver = Context::getResolver();
+
+        $parentContext = $this->context;
+
+        Context::setResolver(fn ($key) => $this->getFromContext($key));
+
         $this->render(call_user_func($type, $props));
+
+        Context::setResolver($oldResolver);
+
+        $this->context = $parentContext;
+    }
+
+    /** @return mixed */
+    private function getFromContext(string $key)
+    {
+        if (! isset($this->context[$key])) {
+            throw new RenderError(sprintf('Context `%s` has not been provided.', $key));
+        }
+
+        return $this->context[$key];
     }
 
     private function isUnsafeName(string $name): bool

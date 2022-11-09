@@ -259,6 +259,19 @@ class HtmlRendererTest extends TestCase
         );
     }
 
+    public function testClosureComponentWithoutArgs(): void
+    {
+        $c = static fn (): Element => el(
+            'div',
+            ['data-foo' => 'bar'],
+        );
+
+        $this->assertRenderMatches(
+            '<div data-foo="bar"></div>',
+            el($c, [], 'baz'),
+        );
+    }
+
     public function testClassComponent(): void
     {
         $this->assertRenderMatches(
@@ -312,6 +325,81 @@ class HtmlRendererTest extends TestCase
         $this->assertRenderMatches(
             '<div data-foo="bar"><div class="children">baz</div></div>',
             el([$c, 'fn'], ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testSingleLevelContext(): void
+    {
+        $c1 = static fn (array $props): Element => el(
+            Context::class,
+            ['foo' => 'bar'],
+            $props['children'],
+        );
+
+        $c2 = static function (): Element {
+            $foo = use_context('foo');
+
+            return el('div', [], $foo);
+        };
+
+        $this->assertRenderMatches(
+            '<div>bar</div>',
+            el($c1, [], el($c2)),
+        );
+    }
+
+    public function testMultiLevelContext(): void
+    {
+        $c1 = static fn (array $props): Element => el(
+            Context::class,
+            ['foo' => 'bar'],
+            $props['children'],
+        );
+
+        $c2 = static fn (array $props): Element => el(
+            Context::class,
+            ['foo' => 'baz'],
+            $props['children'],
+        );
+
+        $c3 = static function (): Element {
+            $foo = use_context('foo');
+
+            return el('div', [], $foo);
+        };
+
+        $this->assertRenderMatches(
+            '<div>bar</div><div>baz</div><div>bar</div>',
+            el($c1, [], [
+                el($c3),
+                el($c2, [], el($c3)),
+                el($c3),
+            ]),
+        );
+    }
+
+    public function testModifyingExistingContext(): void
+    {
+        $c = static function ($props): Element {
+            $propFoo = $props['foo'] ?? null;
+
+            $contextFoo = use_context('foo');
+
+            return el(
+                Context::class,
+                ['foo' => $propFoo ?? $contextFoo],
+                el('div', [], $contextFoo),
+                $props['children'] ?? null,
+            );
+        };
+
+        $this->assertRenderMatches(
+            '<div>bar</div><div>baz</div>',
+            el(
+                Context::class,
+                ['foo' => 'bar'],
+                el($c, ['foo' => 'baz'], el($c)),
+            ),
         );
     }
 }
