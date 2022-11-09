@@ -115,6 +115,14 @@ class HtmlRenderer
             return;
         }
 
+        // Unsafe HTML
+
+        if ($type === ':unsafe-html') {
+            $this->renderUnsafeHtml($props);
+
+            return;
+        }
+
         // Context
 
         if ($type === Context::class) {
@@ -241,6 +249,29 @@ class HtmlRenderer
         }
 
         $this->renderArray($children);
+    }
+
+    /** @param array<string,mixed> $props */
+    private function renderUnsafeHtml(array $props): void
+    {
+        $children = $props['children'] ?? null ?: [];
+        unset($props['children']);
+
+        if ($props) {
+            throw new RenderError('<:unsafe-html> cannot have other props than children.');
+        }
+
+        if (! is_array($children)) {
+            throw new RenderError(sprintf('Unsupported $props[children] type %s.', gettype($children)));
+        }
+
+        if (count($children) !== 1) {
+            throw new RenderError(sprintf('<:unsafe-html> must have exactly 1 child.', gettype($children)));
+        }
+
+        $unsafeHtml = $children[0];
+
+        echo $unsafeHtml;
     }
 
     /** @param array<string,mixed> $props */

@@ -227,6 +227,46 @@ class HtmlRendererTest extends TestCase
         );
     }
 
+    public function testUnsafeHtmlRendersChild(): void
+    {
+        $this->assertRenderMatches(
+            '<div><h1 class="unsafe">bar</h1></div>',
+            el('div', [], el(':unsafe-html', [], '<h1 class="unsafe">bar</h1>')),
+        );
+    }
+
+    public function testUnsafeHtmlCannotHaveProps(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el(':unsafe-html', ['foo' => 'bar'], 'baz'),
+        );
+    }
+
+    public function testUnsafeHtmlCannotHaveNonArrayChildren(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el(':unsafe-html', ['children' => 'bar']),
+        );
+    }
+
+    public function testUnsafeHtmlCannotHaveZeroChildren(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el(':unsafe-html', []),
+        );
+    }
+
+    public function testUnsafeHtmlCannotHaveMultipleChildren(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el(':unsafe-html', [], 'foo', 'bar'),
+        );
+    }
+
     public function testRootComponent(): void
     {
         $c = static fn (array $props): Element => el(
