@@ -107,6 +107,14 @@ class HtmlRenderer
         $type  = $el->getType();
         $props = $el->getProps();
 
+        // Fragment
+
+        if ($type === '') {
+            $this->renderFragment($props);
+
+            return;
+        }
+
         // Context
 
         if ($type === Context::class) {
@@ -216,6 +224,23 @@ class HtmlRenderer
         }
 
         $this->render($children);
+    }
+
+    /** @param array<string,mixed> $props */
+    private function renderFragment(array $props): void
+    {
+        $children = $props['children'] ?? null ?: [];
+        unset($props['children']);
+
+        if ($props) {
+            throw new RenderError('Fragments cannot have other props than children.');
+        }
+
+        if (! is_array($children)) {
+            throw new RenderError(sprintf('Unsupported $props[children] type %s.', gettype($children)));
+        }
+
+        $this->renderArray($children);
     }
 
     /** @param array<string,mixed> $props */

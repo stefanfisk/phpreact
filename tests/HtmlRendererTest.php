@@ -203,6 +203,30 @@ class HtmlRendererTest extends TestCase
         );
     }
 
+    public function testFragmentsRenderChildren(): void
+    {
+        $this->assertRenderMatches(
+            '<div>foo</div>bar<div>baz</div>',
+            el('', [], [el('div', [], 'foo'), 'bar', el('div', [], 'baz')]),
+        );
+    }
+
+    public function testFragmentsCannotHaveProps(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el('', ['foo' => 'bar'], ['baz']),
+        );
+    }
+
+    public function testFragmentsCannotHaveNonArrayChildren(): void
+    {
+        $this->assertRenderThrows(
+            RenderError::class,
+            el('', ['children' => 'bar']),
+        );
+    }
+
     public function testRootComponent(): void
     {
         $c = static fn (array $props): Element => el(
