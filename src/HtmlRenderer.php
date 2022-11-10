@@ -8,16 +8,22 @@ use Closure;
 use InvalidArgumentException;
 use Throwable;
 
+use function array_filter;
 use function array_map;
+use function array_push;
+use function array_walk_recursive;
 use function call_user_func;
 use function class_exists;
 use function count;
+use function explode;
 use function function_exists;
 use function gettype;
 use function htmlspecialchars;
+use function implode;
 use function is_array;
 use function is_bool;
 use function is_callable;
+use function is_int;
 use function is_object;
 use function is_scalar;
 use function is_string;
@@ -27,6 +33,7 @@ use function ob_get_clean;
 use function ob_get_level;
 use function ob_start;
 use function preg_match;
+use function sort;
 use function sprintf;
 
 use const ENT_HTML5;
@@ -162,7 +169,7 @@ class HtmlRenderer
             && count($type) === 2
             && is_object($type[0])
             && is_string($type[1])
-            && method_exists($type[0], $type[1])
+            && is_callable([$type[0], $type[1]])
         ) {
             $this->renderComponent($type, $props);
 
@@ -309,6 +316,14 @@ class HtmlRenderer
                 continue;
             }
 
+            if ($name === 'class') {
+                $value = $this->classnames($value);
+
+                if (! $value) {
+                    continue;
+                }
+            }
+
             echo ' ';
             echo $this->escape($name);
 
@@ -369,5 +384,49 @@ class HtmlRenderer
     private function escape($value): string
     {
         return htmlspecialchars((string) $value, ENT_QUOTES | ENT_HTML5, 'UTF-8', true);
+    }
+
+    /** @param mixed $classes */
+    private function classnames($classes): string
+    {
+        if (! $classes) {
+            return '';
+        }
+
+        if (is_string($classes)) {
+            $classes = array_filter(explode(' ', $classes));
+        }
+
+        if (! is_array($classes)) {
+            throw new RenderError(sprintf('Unsupported $props[class] type %s.', gettype($classes)));
+        }
+
+        $effectiveClasses = [];
+
+        array_walk_recursive(
+            $classes,
+            /**
+             * @param mixed $value
+             * @param int|string $key
+             */
+            static function ($value, $key) use (&$effectiveClasses): void {
+                if (is_int($key)) {
+                    $class = $value;
+                } elseif ($value) {
+                    $class = $key;
+                } else {
+                    return;
+                }
+
+                array_push($effectiveClasses, ...explode(' ', $class));
+            },
+        );
+
+        $effectiveClasses = array_map('trim', $effectiveClasses);
+        $effectiveClasses = array_filter($effectiveClasses);
+
+        sort($effectiveClasses);
+
+        return implode(' ', $effectiveClasses);
     }
 }

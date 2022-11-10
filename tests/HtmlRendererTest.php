@@ -187,6 +187,46 @@ class HtmlRendererTest extends TestCase
         );
     }
 
+    public function testIgnoredEmptyClassPropString(): void
+    {
+        $this->assertRenderMatches(
+            '<div></div>',
+            el('div', ['class' => '']),
+        );
+    }
+
+    public function testSortsClassPropString(): void
+    {
+        $this->assertRenderMatches(
+            '<div class="bar foo"></div>',
+            el('div', ['class' => 'foo bar']),
+        );
+    }
+
+    public function testConditionalClassProp(): void
+    {
+        $this->assertRenderMatches(
+            '<div class="bar foo"></div>',
+            el('div', ['class' => ['foo', 'bar' => true, 'baz' => false]]),
+        );
+    }
+
+    public function testNestedConditionalClassProp(): void
+    {
+        $this->assertRenderMatches(
+            '<div class="bar foo"></div>',
+            el('div', ['class' => ['foo', ['bar' => true], ['baz' => false]]]),
+        );
+    }
+
+    public function testSortsConditionalClassPropString(): void
+    {
+        $this->assertRenderMatches(
+            '<div class="bar foo"></div>',
+            el('div', ['class' => ['foo bar' => true]]),
+        );
+    }
+
     public function testVoidElementsDoNotHaveEndTags(): void
     {
         $this->assertRenderMatches(
@@ -444,7 +484,7 @@ class HtmlRendererTest extends TestCase
 
     public function testModifyingExistingContext(): void
     {
-        $c = static function ($props): Element {
+        $c = static function (array $props): Element {
             $propFoo = $props['foo'] ?? null;
 
             $contextFoo = use_context('foo');
