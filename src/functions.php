@@ -21,3 +21,21 @@ function use_context(string $key)
 {
     return Context::use($key);
 }
+
+/** @param mixed $el */
+// phpcs:ignore Squiz.Functions.GlobalFunction.Found
+function render($el): void
+{
+    $renderer = new HtmlRenderer();
+
+    $renderer->render($el);
+}
+
+/** @param mixed $el */
+// phpcs:ignore Squiz.Functions.GlobalFunction.Found
+function render_to_string($el): string
+{
+    $renderer = new HtmlRenderer();
+
+    return $renderer->renderToString($el);
+}
