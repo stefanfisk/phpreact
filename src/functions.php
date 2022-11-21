@@ -19,7 +19,7 @@ function el($type, array $props = [], ...$children): Element
 // phpcs:ignore Squiz.Functions.GlobalFunction.Found
 function use_context(string $key)
 {
-    return Context::use($key);
+    return NodeRenderer::getInstance()->useContext($key);
 }
 
 /** @param mixed $el */

@@ -14,7 +14,6 @@ use function array_filter;
 use function array_map;
 use function array_push;
 use function array_walk_recursive;
-use function call_user_func;
 use function count;
 use function explode;
 use function gettype;
@@ -51,9 +50,6 @@ class HtmlRenderer
         'track' => true,
         'wbr' => true,
     ];
-
-    /** @var array<string,mixed> */
-    private array $context = [];
 
     /** @param mixed $el */
     public function renderToString($el): string
@@ -221,32 +217,6 @@ class HtmlRenderer
         }
 
         echo '</' . $name . '>';
-    }
-
-    /** @param array<string,mixed> $props */
-    private function renderComponent(callable $type, array $props): void
-    {
-        $oldResolver = Context::getResolver();
-
-        $parentContext = $this->context;
-
-        Context::setResolver(fn ($key) => $this->getFromContext($key));
-
-        $this->render(call_user_func($type, $props));
-
-        Context::setResolver($oldResolver);
-
-        $this->context = $parentContext;
-    }
-
-    /** @return mixed */
-    private function getFromContext(string $key)
-    {
-        if (! isset($this->context[$key])) {
-            throw new RenderError(sprintf('Context `%s` has not been provided.', $key));
-        }
-
-        return $this->context[$key];
     }
 
     private function isUnsafeName(string $name): bool

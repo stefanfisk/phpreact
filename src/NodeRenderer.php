@@ -32,14 +32,43 @@ use function sprintf;
 
 class NodeRenderer
 {
+    private static ?NodeRenderer $instance = null;
+
+    public static function getInstance(): ?NodeRenderer
+    {
+        return self::$instance;
+    }
+
+    public static function setInstance(?NodeRenderer $instance): void
+    {
+        self::$instance = $instance;
+    }
+
+    private ?Node $currentNode;
+
     /** @param mixed $el */
-    public function render($el, ?Node $parent = null): ?Node
+    public function render($el): ?Node
+    {
+        $oldInstance = self::getInstance();
+        self::setInstance($this);
+
+        $node = $this->renderFrom($el, null);
+
+        self::setInstance($oldInstance);
+
+        return $node;
+    }
+
+    /** @param mixed $el */
+    private function renderFrom($el, ?Node $parent): ?Node
     {
         $node = $this->nodeFrom($el, $parent);
 
         if (! $node) {
             return null;
         }
+
+        $this->currentNode = $node;
 
         $elementChildren = null;
 
@@ -58,21 +87,17 @@ class NodeRenderer
 
             $elementChildren = $node->props['children'] ?? [];
         } elseif ($node instanceof ComponentNode) {
-            $oldResolver = Context::getResolver();
-
-            Context::setResolver(fn (string $key) => $this->getFromContext($key, $node));
-
             $elementChildren = call_user_func($node->type, $node->props);
-
-            Context::setResolver($oldResolver);
         }
 
         if ($elementChildren) {
             $node->children = array_filter(array_map(
-                fn ($child) => $this->render($child, $node),
+                fn ($child) => $this->renderFrom($child, $node),
                 $this->toChildArray($elementChildren),
             ));
         }
+
+        $this->currentNode = $parent;
 
         return $node;
     }
@@ -284,5 +309,11 @@ class NodeRenderer
         }
 
         return $this->getFromContext($key, $node->parent);
+    }
+
+    /** @return mixed */
+    public function useContext(string $key)
+    {
+        return $this->getFromContext($key, $this->currentNode);
     }
 }
