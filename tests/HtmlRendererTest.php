@@ -259,14 +259,6 @@ class HtmlRendererTest extends TestCase
         );
     }
 
-    public function testFragmentsCannotHaveNonArrayChildren(): void
-    {
-        $this->assertRenderThrows(
-            RenderError::class,
-            el('', ['children' => 'bar']),
-        );
-    }
-
     public function testUnsafeHtmlRendersChild(): void
     {
         $this->assertRenderMatches(

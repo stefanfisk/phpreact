@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace StefanFisk\Phpreact;
 
-use Closure;
 use InvalidArgumentException;
+use StefanFisk\Phpreact\Renderer\Node;
+use StefanFisk\Phpreact\Renderer\ScalarNode;
+use StefanFisk\Phpreact\Renderer\TagNode;
 use Throwable;
 
 use function array_filter;
@@ -13,21 +15,14 @@ use function array_map;
 use function array_push;
 use function array_walk_recursive;
 use function call_user_func;
-use function class_exists;
 use function count;
 use function explode;
-use function function_exists;
 use function gettype;
 use function htmlspecialchars;
 use function implode;
 use function is_array;
-use function is_bool;
-use function is_callable;
 use function is_int;
-use function is_object;
-use function is_scalar;
 use function is_string;
-use function method_exists;
 use function ob_end_clean;
 use function ob_get_clean;
 use function ob_get_level;
@@ -83,184 +78,61 @@ class HtmlRenderer
     /** @param mixed $el */
     public function render($el): void
     {
+        $nodeRenderer = new NodeRenderer();
+
+        $node = $nodeRenderer->render($el);
+
+        $this->renderNode($node);
+    }
+
+    private function renderNode(?Node $node): void
+    {
         // Void
 
-        if ($el === null || is_bool($el) || $el === '') {
+        if (! $node) {
             return;
         }
 
         // Scalars
 
-        if (is_scalar($el)) {
-            $this->renderScalar($el);
+        if ($node instanceof ScalarNode) {
+            $this->renderScalar($node);
 
             return;
         }
 
-        // Arrays
+        // Tags
 
-        if (is_array($el)) {
-            $this->renderArray($el);
-
-            return;
-        }
-
-        // Elements
-
-        if (! $el instanceof Element) {
-            throw new RenderError(sprintf('Unsupported type %s.', gettype($el)));
-        }
-
-        $type  = $el->getType();
-        $props = $el->getProps();
-
-        // Fragment
-
-        if ($type === '') {
-            $this->renderFragment($props);
+        if ($node instanceof TagNode) {
+            if ($node->name === ':unsafe-html') {
+                $this->renderUnsafeHtml($node);
+            } else {
+                $this->renderTag($node);
+            }
 
             return;
         }
 
-        // Unsafe HTML
+        // Everything else
 
-        if ($type === ':unsafe-html') {
-            $this->renderUnsafeHtml($props);
-
-            return;
-        }
-
-        // Context
-
-        if ($type === Context::class) {
-            $this->renderContext($props);
-
-            return;
-        }
-
-        // Closure component
-
-        if ($type instanceof Closure) {
-            $this->renderComponent($type, $props);
-
-            return;
-        }
-
-        // Function component
-
-        if (is_string($type) && function_exists($type)) {
-            $this->renderComponent($type, $props);
-
-            return;
-        }
-
-        // Object component with default method
-
-        if (is_object($type) && method_exists($type, 'render')) {
-            $this->renderComponent([$type, 'render'], $props);
-
-            return;
-        }
-
-        // Object component with custom method
-
-        if (
-            is_array($type)
-            && count($type) === 2
-            && is_object($type[0])
-            && is_string($type[1])
-            && is_callable([$type[0], $type[1]])
-        ) {
-            $this->renderComponent($type, $props);
-
-            return;
-        }
-
-        // Class component with default method
-
-        if (is_string($type) && class_exists($type) && method_exists($type, 'render')) {
-            $component = new $type();
-
-            $this->renderComponent([$component, 'render'], $props);
-
-            return;
-        }
-
-        // Class component with custom method
-
-        if (
-            is_array($type)
-            && count($type) === 2
-            && is_string($type[0])
-            && is_string($type[1])
-            && class_exists($type[0])
-            && method_exists($type[0], $type[1])
-        ) {
-            $component = new $type[0]();
-
-            $this->renderComponent([$component, $type[1]], $props);
-
-            return;
-        }
-
-        // HTML tag
-
-        if (is_string($type)) {
-            $this->renderTag($type, $props);
-
-            return;
-        }
-
-        // Unsupported type
-
-        throw new RenderError(sprintf('Unsupported element type %s.', gettype($type)));
+        $this->renderArray($node->children);
     }
 
-    /** @param scalar $value */
-    private function renderScalar($value): void
+    private function renderScalar(ScalarNode $node): void
     {
-        echo $this->escape($value);
+        echo $this->escape($node->value);
     }
 
-    /** @param array<mixed> $els */
-    private function renderArray(array $els): void
+    /** @param array<Node> $nodes */
+    private function renderArray(array $nodes): void
     {
-        array_map([$this, 'render'], $els);
+        array_map(fn (Node $node) => $this->renderNode($node), $nodes);
     }
 
-    /** @param array<string,mixed> $props */
-    private function renderContext(array $props): void
+    private function renderUnsafeHtml(TagNode $node): void
     {
-        $children = $props['children'] ?? null ?: [];
-        unset($props['children']);
+        $props = $node->props;
 
-        foreach ($props as $name => $value) {
-            $this->context[$name] = $value;
-        }
-
-        $this->render($children);
-    }
-
-    /** @param array<string,mixed> $props */
-    private function renderFragment(array $props): void
-    {
-        $children = $props['children'] ?? null ?: [];
-        unset($props['children']);
-
-        if ($props) {
-            throw new RenderError('Fragments cannot have other props than children.');
-        }
-
-        if (! is_array($children)) {
-            throw new RenderError(sprintf('Unsupported $props[children] type %s.', gettype($children)));
-        }
-
-        $this->renderArray($children);
-    }
-
-    /** @param array<string,mixed> $props */
-    private function renderUnsafeHtml(array $props): void
-    {
         $children = $props['children'] ?? null ?: [];
         unset($props['children']);
 
@@ -281,18 +153,20 @@ class HtmlRenderer
         echo $unsafeHtml;
     }
 
-    /** @param array<string,mixed> $props */
-    private function renderTag(string $type, array $props): void
+    private function renderTag(TagNode $node): void
     {
-        if ($type === '') {
+        $name  = $node->name;
+        $props = $node->props;
+
+        if ($name === '') {
             throw new InvalidArgumentException('HTML tag cannot be empty string.');
         }
 
-        if ($this->isUnsafeName($type)) {
-            throw new RenderError(sprintf('%s is not a valid HTML tag name.', $type));
+        if ($this->isUnsafeName($name)) {
+            throw new RenderError(sprintf('%s is not a valid HTML tag name.', $name));
         }
 
-        $isVoid = self::VOID_ELEMENTS[$type] ?? false;
+        $isVoid = self::VOID_ELEMENTS[$name] ?? false;
 
         $children = $props['children'] ?? null ?: [];
         unset($props['children']);
@@ -302,37 +176,37 @@ class HtmlRenderer
         }
 
         if ($isVoid && $children) {
-            throw new RenderError(sprintf('<%s> is a void element, and cannot have children.', $type));
+            throw new RenderError(sprintf('<%s> is a void element, and cannot have children.', $name));
         }
 
-        echo '<' . $type;
+        echo '<' . $name;
 
-        foreach ($props as $name => $value) {
-            if ($this->isUnsafeName($name)) {
+        foreach ($props as $attName => $attValue) {
+            if ($this->isUnsafeName($attName)) {
                 throw new RenderError(sprintf('`%s` is not a valid attribute name.', $name));
             }
 
-            if ($value === null || $value === false) {
+            if ($attValue === null || $attValue === false) {
                 continue;
             }
 
-            if ($name === 'class') {
-                $value = $this->classnames($value);
+            if ($attName === 'class') {
+                $attValue = $this->classnames($attValue);
 
-                if (! $value) {
+                if (! $attValue) {
                     continue;
                 }
             }
 
             echo ' ';
-            echo $this->escape($name);
+            echo $this->escape($attName);
 
-            if ($value === true) {
+            if ($attValue === true) {
                 continue;
             }
 
             echo '="';
-            echo $this->escape($value);
+            echo $this->escape($attValue);
             echo '"';
         }
 
@@ -346,7 +220,7 @@ class HtmlRenderer
             return;
         }
 
-        echo '</' . $type . '>';
+        echo '</' . $name . '>';
     }
 
     /** @param array<string,mixed> $props */
