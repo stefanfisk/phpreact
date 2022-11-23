@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace StefanFisk\Phpreact;
 
+
 /**
  * @param mixed               $type
  * @param array<string,mixed> $props
@@ -18,6 +19,21 @@ function el($type, array $props = [], ...$children): Element
 function use_context(string $key)
 {
     return NodeRenderer::getInstance()->useContext($key);
+}
+
+function use_effect(callable $fn, ?array $deps = null): void
+{
+    NodeRenderer::getInstance()->useEffect($fn, $deps);
+}
+
+/**
+ * @param mixed $initialValue
+ *
+ * @return array{0:mixed,1:Closure(mixed):void}
+ */
+function use_state($initialValue): array
+{
+    return NodeRenderer::getInstance()->useState($initialValue);
 }
 
 /** @param mixed $el */

@@ -21,6 +21,10 @@ class Element
      */
     public static function create($type, array $props = [], ...$children): Element
     {
+        if ($type === '') {
+            $type = Fragment::class;
+        }
+
         if ($children) {
             if (! empty($props['children'])) {
                 throw new InvalidArgumentException('Both $props[children] and $children are non-empty.');

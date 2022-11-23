@@ -498,4 +498,76 @@ class HtmlRendererTest extends TestCase
             ),
         );
     }
+
+    public function testSetState(): void
+    {
+        $c = static function ($props): string {
+            [$val, $setVal] = use_state('foo');
+            use_effect(static fn () => $setVal('bar'), []);
+
+            return $val;
+        };
+
+        $this->assertRenderMatches(
+            'bar',
+            el($c),
+        );
+    }
+
+    public function testEffect(): void
+    {
+        $calls = 0;
+
+        $mockFn = static function () use (&$calls): void {
+            $calls += 1;
+        };
+
+        $c = static function ($props) use ($mockFn): string {
+            [$val, $setVal] = use_state('foo');
+            use_effect(static fn () => $setVal('bar'), []);
+            use_effect($mockFn);
+
+            return $val;
+        };
+
+        $this->assertRenderMatches(
+            'bar',
+            el($c),
+        );
+
+        $this->assertEquals(1, $calls);
+    }
+
+    public function testEffectCleanup(): void
+    {
+        $calls = 0;
+
+        $mockFn = static function () use (&$calls): void {
+            $calls += 1;
+        };
+
+        $c1 = static function ($props) use ($mockFn) {
+            use_effect(static fn () => $mockFn);
+
+            return null;
+        };
+
+        $c2 = static function ($props) use ($c1) {
+            [$val, $setVal] = use_state('foo');
+            use_effect(static fn () => $setVal('bar'), []);
+
+            if ($val === 'foo') {
+                return el($c1);
+            }
+
+            return 'bar';
+        };
+
+        $this->assertRenderMatches(
+            'bar',
+            el($c2),
+        );
+
+        $this->assertEquals(1, $calls);
+    }
 }

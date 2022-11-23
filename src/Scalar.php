@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace StefanFisk\Phpreact;
 
-final class Context
+final class Scalar
 {
     /**
-     * @param array{children:mixed} $props
+     * @param array{value:scalar} $props
      *
      * @return mixed
      */
     public function render(array $props)
     {
-        return $props['children'] ?? null;
+        return $props['value'] ?? null;
     }
 }

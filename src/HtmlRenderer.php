@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace StefanFisk\Phpreact;
 
 use InvalidArgumentException;
-use StefanFisk\Phpreact\Renderer\Node;
-use StefanFisk\Phpreact\Renderer\ScalarNode;
-use StefanFisk\Phpreact\Renderer\TagNode;
 use Throwable;
 
 use function array_filter;
@@ -91,7 +88,7 @@ class HtmlRenderer
 
         // Scalars
 
-        if ($node instanceof ScalarNode) {
+        if ($node->type === Scalar::class) {
             $this->renderScalar($node);
 
             return;
@@ -99,8 +96,8 @@ class HtmlRenderer
 
         // Tags
 
-        if ($node instanceof TagNode) {
-            if ($node->name === ':unsafe-html') {
+        if (is_string($node->type) && ! $node->component) {
+            if ($node->type === ':unsafe-html') {
                 $this->renderUnsafeHtml($node);
             } else {
                 $this->renderTag($node);
@@ -114,9 +111,9 @@ class HtmlRenderer
         $this->renderArray($node->children);
     }
 
-    private function renderScalar(ScalarNode $node): void
+    private function renderScalar(Node $node): void
     {
-        echo $this->escape($node->value);
+        echo $this->escape($node->props['value'] ?? null);
     }
 
     /** @param array<Node> $nodes */
@@ -125,7 +122,7 @@ class HtmlRenderer
         array_map(fn (Node $node) => $this->renderNode($node), $nodes);
     }
 
-    private function renderUnsafeHtml(TagNode $node): void
+    private function renderUnsafeHtml(Node $node): void
     {
         $props = $node->props;
 
@@ -149,9 +146,9 @@ class HtmlRenderer
         echo $unsafeHtml;
     }
 
-    private function renderTag(TagNode $node): void
+    private function renderTag(Node $node): void
     {
-        $name  = $node->name;
+        $name  = $node->type;
         $props = $node->props;
 
         if ($name === '') {
@@ -164,7 +161,7 @@ class HtmlRenderer
 
         $isVoid = self::VOID_ELEMENTS[$name] ?? false;
 
-        $children = $props['children'] ?? null ?: [];
+        $children = $node->children;
         unset($props['children']);
 
         if ($children && ! is_array($children)) {
@@ -209,7 +206,7 @@ class HtmlRenderer
         echo '>';
 
         foreach ($children as $child) {
-            $this->render($child);
+            $this->renderNode($child);
         }
 
         if ($isVoid) {

@@ -5,22 +5,17 @@ declare(strict_types=1);
 namespace StefanFisk\Phpreact;
 
 use Closure;
-use StefanFisk\Phpreact\Renderer\ComponentNode;
-use StefanFisk\Phpreact\Renderer\ContextNode;
-use StefanFisk\Phpreact\Renderer\FragmentNode;
-use StefanFisk\Phpreact\Renderer\Node;
-use StefanFisk\Phpreact\Renderer\ScalarNode;
-use StefanFisk\Phpreact\Renderer\TagNode;
 
 use function array_filter;
-use function array_map;
+use function array_shift;
+use function array_splice;
 use function array_walk_recursive;
 use function call_user_func;
 use function class_exists;
 use function count;
 use function function_exists;
-use function get_class;
 use function gettype;
+use function in_array;
 use function is_array;
 use function is_bool;
 use function is_callable;
@@ -44,7 +39,14 @@ class NodeRenderer
         self::$instance = $instance;
     }
 
+    private int $nextNodeId = 1;
+
+    /** @var array<Node> */
+    private array $rerenderQueue = [];
+
     private ?Node $currentNode;
+    private bool $isInitialRender;
+    private int $currentHookI;
 
     /** @param mixed $el */
     public function render($el): ?Node
@@ -52,50 +54,118 @@ class NodeRenderer
         $oldInstance = self::getInstance();
         self::setInstance($this);
 
-        $node = $this->renderFrom($el, null);
+        $node = $this->renderFrom($el, null, null);
+
+        $this->processRerenderQueue();
 
         self::setInstance($oldInstance);
 
         return $node;
     }
 
-    /** @param mixed $el */
-    private function renderFrom($el, ?Node $parent): ?Node
+    private function enqueueRerender(Node $node): void
     {
-        $node = $this->nodeFrom($el, $parent);
-
-        if (! $node) {
-            return null;
+        if (in_array($node, $this->rerenderQueue)) {
+            return;
         }
 
-        $this->currentNode = $node;
+        $this->rerenderQueue[] = $node;
+    }
 
-        $elementChildren = null;
+    private function processRerenderQueue(): void
+    {
+        while ($this->rerenderQueue) {
+            $i = 0;
+            $a = $this->rerenderQueue[$i];
 
-        if ($node instanceof TagNode) {
-            $elementChildren = $node->props['children'] ?? [];
-        } elseif ($node instanceof FragmentNode) {
-            $elementChildren = $node->props['children'] ?? [];
-        } elseif ($node instanceof ContextNode) {
-            foreach ($node->props as $name => $value) {
-                if ($name === 'children') {
+            for ($j = 0; $j < count($this->rerenderQueue); $j++) {
+                $b = $this->rerenderQueue[$j];
+
+                if ($a->depth < $b->depth) {
                     continue;
                 }
 
-                $this->context[$name] = $value;
+                $i = $j;
+                $b = $a;
             }
 
-            $elementChildren = $node->props['children'] ?? [];
-        } elseif ($node instanceof ComponentNode) {
-            $elementChildren = call_user_func($node->type, $node->props);
+            array_splice($this->rerenderQueue, $i, 1);
+
+            //TODO: Fix this super ugly hack
+            $el = Element::create($a->type, $a->props);
+
+            $this->renderFrom($el, $a->parent, $a);
+        }
+    }
+
+    /** @param mixed $el */
+    private function renderFrom($el, ?Node $parent, ?Node $oldNode): ?Node
+    {
+        $node = $this->nodeFrom($el, $parent);
+
+        // If there's nothing to render, just unmount the old node
+
+        if (! $node) {
+            if ($oldNode) {
+                $this->unmountNode($oldNode);
+            }
+
+            return null;
         }
 
-        if ($elementChildren) {
-            $node->children = array_filter(array_map(
-                fn ($child) => $this->renderFrom($child, $node),
-                $this->toChildArray($elementChildren),
-            ));
+        // If we have an old node
+
+        if ($oldNode) {
+            // If the node type changed
+            if ($node->type !== $oldNode->type) {
+                // Unmount the old and continue with new
+                $this->unmountNode($oldNode);
+
+                $oldNode = null;
+            } else {
+                // Reuse the old node with the new props
+                $oldNode->props = $node->props;
+
+                $node = $oldNode;
+            }
         }
+
+        // Render children
+
+        $this->currentNode = $node;
+
+        if ($node->component) {
+            do {
+                $this->isInitialRender = ! $oldNode;
+                $this->currentHookI    = 0;
+
+                $childEls = call_user_func($node->component, $node->props);
+
+                while ($node->pendingEffects) {
+                    array_shift($node->pendingEffects)();
+                }
+
+                if ($this->currentHookI !== count($node->hooks)) {
+                    throw new RenderError('Hooks must be called in exact same order on every render.');
+                }
+            } while ($node->pendingEffects);
+        } else {
+            $childEls = $node->props['children'] ?? [];
+        }
+
+        $childEls = $this->toChildArray($childEls);
+
+        $newChildren = [];
+
+        foreach ($childEls as $i => $childEl) {
+            $newChildren[] = $this->renderFrom($childEl, $node, $node->children[$i] ?? null);
+        }
+
+        for ($i = count($newChildren); $i < count($node->children); $i++) {
+            $this->unmountNode($node->children[$i]);
+        }
+
+        $node->children = $newChildren;
 
         $this->currentNode = $parent;
 
@@ -105,6 +175,10 @@ class NodeRenderer
     /** @param mixed $el */
     private function nodeFrom($el, ?Node $parent): ?Node
     {
+        $type      = null;
+        $props     = [];
+        $component = null;
+
         // Void
 
         if ($el === null || is_bool($el) || $el === '') {
@@ -114,167 +188,81 @@ class NodeRenderer
         // Scalars
 
         if (is_scalar($el)) {
-            $node = new ScalarNode();
-
-            $node->parent = $parent;
-            $node->value  = $el;
-
-            return $node;
+            $type           = Scalar::class;
+            $props['value'] = $el;
         }
 
-        // Arrays
+        // Fragments
 
         if (is_array($el)) {
-            $node = new FragmentNode();
-
-            $node->parent = $parent;
-            $node->props  = ['children' => $this->toChildArray($el)];
-
-            return $node;
+            $type              = Fragment::class;
+            $props['children'] = $el;
         }
 
         // Elements
 
-        if (! $el instanceof Element) {
-            $type = is_scalar($el) ? gettype($el) : get_class($el);
+        if ($el instanceof Element) {
+            $type  = $el->getType();
+            $props = $el->getProps();
 
-            throw new RenderError(sprintf('Unsupported type %s.', $type));
-        }
+            if ($type instanceof Closure) {
+                // Closure component
 
-        $type  = $el->getType();
-        $props = $el->getProps();
+                $component = $type;
+            } elseif (is_string($type) && function_exists($type)) {
+                // Function component
 
-        // Fragment
+                $component = $type;
+            } elseif (is_object($type) && method_exists($type, 'render')) {
+                // Object component with default method
 
-        if ($type === '') {
-            $children = $props['children'] ?? null ?: [];
-            unset($props['children']);
+                $component = [$type, 'render'];
+            } elseif (
+                is_array($type)
+                && count($type) === 2
+                && is_object($type[0])
+                && is_string($type[1])
+                && is_callable([$type[0], $type[1]])
+            ) {
+                // Object component with custom method
 
-            if ($props) {
-                throw new RenderError('Fragments cannot have other props than children.');
+                $component = $type;
+            } elseif (is_string($type) && class_exists($type) && method_exists($type, 'render')) {
+                // Class component with default method
+                $component = [new $type(), 'render'];
+            } elseif (
+                is_array($type)
+                && count($type) === 2
+                && is_string($type[0])
+                && is_string($type[1])
+                && class_exists($type[0])
+                && method_exists($type[0], $type[1])
+            ) {
+                $component = [new $type[0](), $type[1]];
             }
-
-            $node = new FragmentNode();
-
-            $node->parent = $parent;
-            $node->props  = ['children' => $this->toChildArray($children)];
-
-            return $node;
         }
 
-        // Context
+        // Error?
 
-        if ($type === Context::class) {
-            $node = new ContextNode();
-
-            $node->parent = $parent;
-            $node->props  = $props;
-
-            return $node;
+        if (! $type) {
+            throw new RenderError(sprintf('Unsupported element type `%s`.', gettype($el)));
         }
 
-        // Closure component
+        // Done
 
-        if ($type instanceof Closure) {
-            $node = new ComponentNode();
+        $node = new Node();
 
-            $node->parent = $parent;
-            $node->type   = $type;
-            $node->props  = $props;
+        $node->id = $this->nextNodeId++;
 
-            return $node;
-        }
+        $node->type  = $type;
+        $node->props = $props;
 
-        // Function component
+        $node->component = $component;
 
-        if (is_string($type) && function_exists($type)) {
-            $node = new ComponentNode();
+        $node->parent = $parent;
+        $node->depth  = $parent ? $parent->depth + 1 : 0;
 
-            $node->parent = $parent;
-            $node->type   = $type;
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // Object component with default method
-
-        if (is_object($type) && method_exists($type, 'render')) {
-            $node = new ComponentNode();
-
-            $node->parent = $parent;
-            $node->type   = [$type, 'render'];
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // Object component with custom method
-
-        if (
-            is_array($type)
-            && count($type) === 2
-            && is_object($type[0])
-            && is_string($type[1])
-            && is_callable([$type[0], $type[1]])
-        ) {
-            $node = new ComponentNode();
-
-            $node->parent = $parent;
-            $node->type   = $type;
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // Class component with default method
-
-        if (is_string($type) && class_exists($type) && method_exists($type, 'render')) {
-            $node = new ComponentNode();
-
-            $node->parent = $parent;
-            $node->type   = [new $type(), 'render'];
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // Class component with custom method
-
-        if (
-            is_array($type)
-            && count($type) === 2
-            && is_string($type[0])
-            && is_string($type[1])
-            && class_exists($type[0])
-            && method_exists($type[0], $type[1])
-        ) {
-            $component = new $type[0]();
-
-            $node = new ComponentNode();
-
-            $node->parent = $parent;
-            $node->type   = [new $type[0](), $type[1]];
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // HTML tag
-
-        if (is_string($type)) {
-            $node = new TagNode();
-
-            $node->parent = $parent;
-            $node->name   = $type;
-            $node->props  = $props;
-
-            return $node;
-        }
-
-        // Unsupported type
-
-        throw new RenderError(sprintf('Unsupported element type %s.', gettype($type)));
+        return $node;
     }
 
     /**
@@ -285,16 +273,43 @@ class NodeRenderer
     private function toChildArray($children): array
     {
         if (! is_array($children)) {
-            return [$children];
+            $children = [$children];
         }
 
         $flatChildren = [];
 
-        array_walk_recursive($children, static function ($a) use (&$flatChildren): void {
-            $flatChildren[] = $a;
+        array_walk_recursive($children, static function ($el) use (&$flatChildren): void {
+            if ($el === null || is_bool($el) || $el === '') {
+                return;
+            }
+
+            $flatChildren[] = $el;
         });
 
         return $flatChildren;
+    }
+
+    private function unmountNode(Node $node): void
+    {
+        foreach ($node->children as $child) {
+            $this->unmountNode($child);
+        }
+
+        foreach ($node->hooks as $hook) {
+            if ($hook[0] !== 'effect') {
+                continue;
+            }
+
+            $cleanupFn = $hook[3] ?? null;
+
+            if (! $cleanupFn) {
+                continue;
+            }
+
+            call_user_func($cleanupFn);
+        }
+
+         $this->rerenderQueue = array_filter($this->rerenderQueue, static fn ($n) => $n === $node);
     }
 
     /** @return mixed */
@@ -304,7 +319,7 @@ class NodeRenderer
             throw new RenderError(sprintf('Context `%s` has not been provided.', $key));
         }
 
-        if ($node instanceof ContextNode && isset($node->props[$key])) {
+        if ($node->type === Context::class && isset($node->props[$key])) {
             return $node->props[$key];
         }
 
@@ -314,6 +329,109 @@ class NodeRenderer
     /** @return mixed */
     public function useContext(string $key)
     {
+        $node = $this->currentNode;
+
+        if (! $node->component) {
+            throw new RenderError('Cannot call hooks outside of component render.');
+        }
+
+        $currentHookI = $this->currentHookI;
+
+        if ($this->isInitialRender) {
+            $node->hooks[] = ['context', $key];
+        } else {
+            $hook = $node->hooks[$currentHookI];
+
+            if ($hook[0] !== 'context' || $hook[1] !== $key) {
+                throw new RenderError('Hooks must be called in exact same order on every render.');
+            }
+        }
+
+        $this->currentHookI += 1;
+
         return $this->getFromContext($key, $this->currentNode);
+    }
+
+    public function useEffect(callable $fn, ?array $deps = null): void
+    {
+        $node = $this->currentNode;
+
+        if (! $node->component) {
+            throw new RenderError('Cannot call hooks outside of component render.');
+        }
+
+        $currentHookI = $this->currentHookI;
+
+        $enqueueEffect = false;
+
+        if ($this->isInitialRender) {
+            $hook = ['effect', $fn, $deps, null];
+
+            $enqueueEffect = true;
+
+            $node->hooks[] = $hook;
+        } else {
+            $hook = $node->hooks[$currentHookI];
+
+            if ($hook[0] !== 'effect') {
+                throw new RenderError('Hooks must be called in exact same order on every render.');
+            }
+
+            $oldDeps = $hook[2];
+
+            if ($deps === null || $oldDeps !== $deps) {
+                $enqueueEffect = true;
+            }
+        }
+
+        if ($enqueueEffect) {
+            $node->pendingEffects[] = static function () use ($node, $currentHookI, $fn): void {
+                $cleanupFn = call_user_func($fn);
+
+                $node->hooks[$currentHookI][3] = $cleanupFn;
+            };
+
+            $node->hooks[$currentHookI][2] = $deps;
+        }
+
+        $this->currentHookI += 1;
+    }
+
+    /**
+     * @param mixed $initialValue
+     *
+     * @return array{0:mixed,1:Closure(mixed):void}
+     */
+    public function useState($initialValue): array
+    {
+        $node = $this->currentNode;
+
+        if (! $node->component) {
+            throw new RenderError('Cannot call hooks outside of component render.');
+        }
+
+        $currentHookI = $this->currentHookI;
+
+        if ($this->isInitialRender) {
+            $setter = function ($newValue) use ($node, $currentHookI): void {
+                $node->hooks[$currentHookI][1] = $newValue;
+
+                $this->enqueueRerender($node);
+            };
+
+            $hook = ['state', $initialValue, $setter];
+
+            $node->hooks[] = $hook;
+        } else {
+            $hook = $node->hooks[$currentHookI];
+
+            if ($hook[0] !== 'state') {
+                throw new RenderError('Hooks must be called in exact same order on every render.');
+            }
+        }
+
+        $this->currentHookI += 1;
+
+        return [$hook[1], $hook[2]];
     }
 }
