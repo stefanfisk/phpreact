@@ -28,5 +28,7 @@
 
     <!-- Rules -->
 
-    <rule ref="Doctrine"/>
+    <rule ref="Doctrine">
+        <exclude name="Squiz.Functions.GlobalFunction.Found" />
+    </rule>
 </ruleset>

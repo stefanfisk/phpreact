@@ -5,25 +5,22 @@ declare(strict_types=1);
 namespace StefanFisk\Phpreact;
 
 /**
- * @param mixed $type
+ * @param mixed               $type
  * @param array<string,mixed> $props
- * @param mixed ...$children
+ * @param mixed               ...$children
  */
-// phpcs:ignore Squiz.Functions.GlobalFunction.Found
 function el($type, array $props = [], ...$children): Element
 {
     return Element::create($type, $props, ...$children);
 }
 
 /** @return mixed */
-// phpcs:ignore Squiz.Functions.GlobalFunction.Found
 function use_context(string $key)
 {
     return NodeRenderer::getInstance()->useContext($key);
 }
 
 /** @param mixed $el */
-// phpcs:ignore Squiz.Functions.GlobalFunction.Found
 function render($el): void
 {
     $renderer = new HtmlRenderer();
@@ -32,7 +29,6 @@ function render($el): void
 }
 
 /** @param mixed $el */
-// phpcs:ignore Squiz.Functions.GlobalFunction.Found
 function render_to_string($el): string
 {
     $renderer = new HtmlRenderer();
