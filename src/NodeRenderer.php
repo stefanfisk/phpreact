@@ -397,6 +397,48 @@ class NodeRenderer
         $this->currentHookI += 1;
     }
 
+    /** @return mixed */
+    public function useMemo(callable $fn, ?array $deps = null)
+    {
+        $node = $this->currentNode;
+
+        if (! $node->component) {
+            throw new RenderError('Cannot call hooks outside of component render.');
+        }
+
+        $currentHookI = $this->currentHookI;
+
+        $updateValue = false;
+
+        if ($this->isInitialRender) {
+            $hook = ['memo', $fn, $deps, null];
+
+            $updateValue = true;
+
+            $node->hooks[] = $hook;
+        } else {
+            $hook = $node->hooks[$currentHookI];
+
+            if ($hook[0] !== 'memo') {
+                throw new RenderError('Hooks must be called in exact same order on every render.');
+            }
+
+            $oldDeps = $hook[2];
+
+            if ($deps === null || $oldDeps !== $deps) {
+                $updateValue = true;
+            }
+        }
+
+        if ($updateValue) {
+            $node->hooks[$currentHookI][3] = call_user_func($fn);
+        }
+
+        $this->currentHookI += 1;
+
+        return $node->hooks[$currentHookI][3];
+    }
+
     /**
      * @param mixed $initialValue
      *
