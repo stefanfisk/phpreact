@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace StefanFisk\Phpreact;
 
+use function uniqid;
+
 /**
  * @param mixed               $type
  * @param array<string,mixed> $props
@@ -29,6 +31,11 @@ function use_memo(callable $fn, ?array $deps = null)
 function use_effect(callable $fn, ?array $deps = null): void
 {
     NodeRenderer::getInstance()->useEffect($fn, $deps);
+}
+
+function use_uniqid(string $prefix = '', bool $moreEntropy = false): string
+{
+    return use_memo(static fn () => uniqid($prefix, $moreEntropy), []);
 }
 
 /**
