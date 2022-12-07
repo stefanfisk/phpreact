@@ -209,10 +209,6 @@ class NodeRenderer
                 // Closure component
 
                 $component = $type;
-            } elseif (is_string($type) && function_exists($type)) {
-                // Function component
-
-                $component = $type;
             } elseif (is_object($type) && method_exists($type, 'render')) {
                 // Object component with default method
 
